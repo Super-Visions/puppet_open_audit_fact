@@ -34,10 +34,13 @@
 strComputer='.'
 
 # submit the audit to the OAv2 server
-submit_online='y'
+submit_online='n'
 
 # check availability of required commands and exit.
 check_commands="n"
+
+# print the output to standard output
+print_stdout="y"
 
 # create an XML text file of the result in the current directory
 create_file="n"
@@ -81,7 +84,7 @@ self_delete='n'
 # 0 = no debug
 # 1 = basic debug
 # 2 = verbose debug
-debugging=2
+debugging=0
 
 # In normal use, DO NOT SET THIS.
 # This value is passed in when running the audit_domain script.
@@ -286,6 +289,8 @@ for arg in "$@"; do
 	case "$parameter" in
 		"check_commands" )
 			check_commands="$parameter_value" ;;
+		"print_stdout" )
+			print_stdout="$parameter_value" ;;
 		"create_file" )
 			create_file="$parameter_value" ;;
 		"debugging" )
@@ -1427,6 +1432,10 @@ if [ "$submit_online" = "y" ]; then
 fi
 
 sed -i -e 's/form_systemXML=//g' $xml_file
+
+if [ "$print_stdout" == "y" ]; then
+	$OA_CAT $PWD/$xml_file
+fi
 if [ "$create_file" != "y" ]; then
 	`$OA_RM -f $PWD/$xml_file`
 fi
