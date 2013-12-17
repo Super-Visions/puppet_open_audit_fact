@@ -1105,16 +1105,19 @@ if [ "$net_cards" != "" ]; then
 	# Get Info on active IPV4 Addresses for this card
 	for net_card_enabled_ip4_addr in $($OA_IP addr show $net_card_id |\
 		$OA_GREP 'inet ' |\
-		$OA_CUT -dt -f2 |\
-		$OA_CUT -db -f1 |\
-		$OA_CUT -c2-); do
+		$OA_AWK '{print $2"|"$NF}'); do
+	#	$OA_CUT -dt -f2 |\
+	#	$OA_CUT -db -f1 |\
+	#	$OA_CUT -c2-); do
 			net_card_enabled="True"
 			net_card_enabled_ip6_addr=""
 			net_card_enabled_ip_subnet=$(cidr2mask `$OA_ECHO $net_card_enabled_ip4_addr |\
-				$OA_CUT -d/ -f2`)
+				$OA_CUT -d/ -f2|$OA_CUT -d\| -f1`)
 			net_card_enabled_ip_version="4"
 			addr_info=$addr_info"\t\t<ip_address>\n"
 			addr_info=$addr_info"\t\t\t<net_mac_address>"$(escape_xml "$net_card_mac")"</net_mac_address>\n"
+			addr_info=$addr_info"\t\t\t<interface_name>"$(escape_xml `$OA_ECHO $net_card_enabled_ip4_addr |\
+				$OA_CUT -d\| -f2`)"</ip_address_v4>\n"
 			addr_info=$addr_info"\t\t\t<ip_address_v4>"$(escape_xml `$OA_ECHO $net_card_enabled_ip4_addr |\
 				$OA_CUT -d/ -f1`)"</ip_address_v4>\n"
 			addr_info=$addr_info"\t\t\t<ip_address_v6>"$(escape_xml "$net_card_enabled_ip6_addr")"</ip_address_v6>\n"
