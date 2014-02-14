@@ -15,10 +15,10 @@ start_time = Timer
 strcomputer = "."
 
 ' submit the audit to the OAv2 server
-submit_online = "y"
+submit_online = "n"
 
 ' create an XML text file of the result in the current directory
-create_file = "n"
+create_file = "y"
 
 ' the address of the OAv2 server "submit" page
 url = "http://localhost/index.php/system"
@@ -44,19 +44,13 @@ windows_user_work_2 = "company"
 skip_mount_point = "n"
 
 ' do not enumerate printers
-skip_printer = "n"
+skip_printer = "y"
 
 ' audit installed software
 skip_software = "n"
 
 ' retrieve all DNS names
 skip_dns = "n"
-
-' run netstat on the target
-' n = no
-' y = yes
-' s = servers only
-run_netstat = "s"
 
 ' if set then delete the audit script upon completion
 ' useful when starting the script on a remote machine and leaving no trace
@@ -66,7 +60,7 @@ self_delete = "n"
 ' 1 = basic debug
 ' 2 = verbose debug
 ' 3 = very verbose debug
-debugging = "1"
+debugging = "0"
 
 ' In normal use, DO NOT SET THIS.
 ' This value is passed in when running the audit_domain script.
@@ -108,9 +102,6 @@ For Each strArg in objArgs
 			
 			case "ping_target"
 				ping_target = argValue
-			
-			case "run_netstat"
-				run_netstat = argValue
 			
 			case "self_delete"
 				self_delete = argvalue
@@ -484,7 +475,7 @@ else
 					if debugging > "0" then wscript.echo "Creating output File" end if
 					' Write the results to a file
 					file_timestamp = Year(dt) & Right("0" & Month(dt),2) & Right("0" & Day(dt),2) & Right("0" & Hour(dt),2) & Right("0" & Minute(dt),2) & Right("0" & Second(dt),2)
-					OutputFile = system_hostname & "-" & file_timestamp & ".xml"
+					OutputFile = system_hostname & "-" & file_timestamp & ".txt"
 					if debugging > "0" then wscript.echo "Output file: " & OutputFile end if
 					Err.clear
 					on error resume next
@@ -594,7 +585,7 @@ for each objItem in colItems
 	' this is no longer used because it is actually the NetBIOS name, not the hostname
 	' we grab it to a temp variable to use below in a last resort situation
 	i = objItem.Name
-	'This is not used because it is not available on Win2000 or WinXP
+	'This is not used becauase it is not available on Win2000 or WinXP
 	'system_hostname = LCase(objItem.DNSHostName)
 	system_domain = objItem.Domain
 	if details_to_lower = "y" then system_domain = lcase(system_domain) end if
@@ -606,8 +597,7 @@ for each objItem in colItems
 	system_model = objItem.Model
 	windows_domain_role = objItem.DomainRole
 	' below only checks when OS is XP or later (not 2000 or NT)
-	windows_part_of_domain = FALSE
-	if (windows_build_number >= 2600) then windows_part_of_domain = objItem.PartOfDomain end if
+	if (windows_build_number > 2195) then windows_part_of_domain = objItem.PartOfDomain end if
 next
 
 system_hostname = ""
@@ -764,7 +754,7 @@ if ( windows_part_of_domain = True Or windows_part_of_domain = "True" ) then
 		on error resume next
 			hr = oTranslate.set (1, domain_dn)
 		on error goto 0
-		if (isnull(hr) or hr = "") then
+		if (isnull(hr)) then
 			' skip everything as we could not contact the domain
 		else 
 			full_ad_domain = oTranslate.Get(1)
@@ -1862,7 +1852,7 @@ if audit_location = "local" then
 	else
 		' copy the file to the machine being audited
 	end if
-	' TODO: get rmtshare.exe from OA server, if needed
+	' TODO - get rmtshare.exe from OA server, if needed
 end if
 
 ' NOTE - only selecting "Disk Drive" type shares.
@@ -2010,7 +2000,7 @@ for each objItem in colItems
 					net_connection_status = WMINetConnectorStatus(objItem2.NetConnectionStatus)
 					if (objItem2.NetConnectionStatus = "2" or objItem2.NetConnectionStatus = "9") then
 						' Found a connected NIC: detecting link speed
-						set colItems3 = objWMIService2.ExecQuery("Select * from MSNdis_LinkSpeed WHERE InstanceName = '" & escape_wmi(net_description) & "'",,32)
+						set colItems3 = objWMIService2.ExecQuery("Select * from MSNdis_LinkSpeed WHERE InstanceName = '" & net_description & "'",,32)
 						error_returned = Err.Number : if (error_returned <> 0 and debugging > "0") then wscript.echo check_wbem_error(error_returned) & " (MSNdis_LinkSpeed)" : audit_wmi_fails = audit_wmi_fails & "MSNdis_LinkSpeed " : end if
 						for each objItem3 in colItems3
 							net_speed = objItem3.NdisLinkSpeed
@@ -2560,44 +2550,40 @@ item = ""
 ' We rely on schtasks.exe so skipping if local system is older than WinXP
 ' Check Build Number: Win2k-->2195, Win98-->2222, WinME-->3000, 
 if ((CInt(windows_build_number) > 2222 and not CInt(windows_build_number) = 3000) and audit_location = "local" ) then
-   if windows_build_number = "2600" then
-      intOffset = 0
-   else 
-      intOffset = 1
-   End if
-   strCommand = "%ComSpec% /c schtasks.exe /query /v /nh /fo csv"
-   strCommand = "schtasks.exe /query /v /nh /fo csv"
-   On Error Resume Next
-   set objExecObject = objShell.Exec(strCommand)
-   On Error GoTo 0
-   If IsObject(objExecObject) then
-      do While Not objExecObject.StdOut.AtEndOfStream
-         strResults = objExecObject.StdOut.ReadAll()
-      Loop
-      MyArray = Split(strResults, vbcrlf)
-      for each line in MyArray
-         sTask = CSVParser(line)
-         if UCase(sTask(0)) = UCase(system_hostname) then
-            item = item & "      <task>" & vbcrlf
-            item = item & "         <task_name><![CDATA[" & sTask(1) & "]]></task_name>" & vbcrlf
-            item = item & "         <next_run><![CDATA[" & sTask(2) & "]]></next_run>" & vbcrlf
-            item = item & "         <status><![CDATA[" & sTask(3) & "]]></status>" & vbcrlf
-            item = item & "         <last_run><![CDATA[" & sTask(4+intOffset) & "]]></last_run>" & vbcrlf
-            item = item & "         <last_result><![CDATA[" & sTask(5+intOffset) & "]]></last_result>" & vbcrlf
-            item = item & "         <creator><![CDATA[" & sTask(6+intOffset) & "]]></creator>" & vbcrlf
-            item = item & "         <schedule><![CDATA[" & sTask(7+intOffset) & "]]></schedule>" & vbcrlf
-            item = item & "         <task_to_run><![CDATA[" & sTask(8+intOffset) & "]]></task_to_run>" & vbcrlf
-            item = item & "         <state><![CDATA[" & sTask(11+intOffset) & "]]></state>" & vbcrlf
-            item = item & "         <user><![CDATA[" & sTask(18+intOffset) & "]]></user>" & vbcrlf
-            item = item & "      </task>" & vbcrlf
-         end if
-      next
-   end if
+	if windows_build_number = "2600" then
+		intOffset = 0
+	else 
+		intOffset = 1
+	End if
+	strCommand = "%ComSpec% /c schtasks.exe /query /v /nh /fo csv"
+	strCommand = "schtasks.exe /query /v /nh /fo csv"
+	set objExecObject = objShell.Exec(strCommand)
+	do While Not objExecObject.StdOut.AtEndOfStream
+		strResults = objExecObject.StdOut.ReadAll()
+	Loop
+	MyArray = Split(strResults, vbcrlf)
+	for each line in MyArray
+		sTask = CSVParser(line)
+		if UCase(sTask(0)) = UCase(system_hostname) then
+			item = item & "		<task>" & vbcrlf
+			item = item & "			<task_name>" & sTask(1) & "</task_name>" & vbcrlf
+			item = item & "			<next_run>" & sTask(2) & "</next_run>" & vbcrlf
+			item = item & "			<status>" & sTask(3) & "</status>" & vbcrlf
+			item = item & "			<last_run>" & sTask(4+intOffset) & "</last_run>" & vbcrlf
+			item = item & "			<last_result>" & sTask(5+intOffset) & "</last_result>" & vbcrlf
+			item = item & "			<creator>" & sTask(6+intOffset) & "</creator>" & vbcrlf
+			item = item & "			<schedule>" & sTask(7+intOffset) & "</schedule>" & vbcrlf
+			item = item & "			<task_to_run>" & sTask(8+intOffset) & "</task_to_run>" & vbcrlf
+			item = item & "			<state>" & sTask(11+intOffset) & "</state>" & vbcrlf
+			item = item & "			<user>" & sTask(18+intOffset) & "</user>" & vbcrlf
+			item = item & "		</task>" & vbcrlf
+		end if
+	next
 end if
 if item > "" then
-   result.WriteText "   <tasks>" & vbcrlf
-   result.WriteText item
-   result.WriteText "   </tasks>" & vbcrlf
+	result.WriteText "	<tasks>" & vbcrlf
+	result.WriteText item
+	result.WriteText "	</tasks>" & vbcrlf
 end if
 
 if debugging > "0" then wscript.echo "environment variables" end if 
@@ -2653,17 +2639,14 @@ item = ""
 set colItems = objWMIService.ExecQuery("Select * from Win32_PageFile",,32)
 error_returned = Err.Number : if (error_returned <> 0 and debugging > "0") then wscript.echo check_wbem_error(error_returned) & " (Win32_PageFile)" : audit_wmi_fails = audit_wmi_fails & "Win32_PageFile " : end if
 for each objItem in colItems
-	item = item & "		<pagefile>" & vbcrlf
-	item = item & "			<file_name>" & escape_xml(objItem.Name) & "</file_name>" & vbcrlf
-	item = item & "			<initial_size>" & escape_xml(objItem.InitialSize) & "</initial_size>" & vbcrlf
-	item = item & "			<size>" & escape_xml(objItem.FileSize) & "</size>" & vbcrlf
-	item = item & "			<max_size>" & escape_xml(objItem.MaximumSize) & "</max_size>" & vbcrlf
-	item = item & "		</pagefile>" & vbcrlf
+	item = item & "		<file_name>" & escape_xml(objItem.Name) & "</file_name>" & vbcrlf
+	item = item & "		<initial_size>" & escape_xml(objItem.InitialSize) & "</initial_size>" & vbcrlf
+	item = item & "		<max_size>" & escape_xml(objItem.MaximumSize) & "</max_size>" & vbcrlf
 next
 if item > "" then
-	result.WriteText "	<pagefiles>" & vbcrlf
+	result.WriteText "	<pagefile>" & vbcrlf
 	result.WriteText item
-	result.WriteText "	</pagefiles>" & vbcrlf
+	result.WriteText "	</pagefile>" & vbcrlf
 end if
 
 
@@ -3776,7 +3759,7 @@ if ((en_sql_server = "y") or (en_sql_express = "y")) then
 		Case default
 			db_login_type = "Unknown"
 			' note - if we hit this, we cannot log in to the DB Server, therefore, we don't enumerate databases
-			' this might occur if we connect to SQL 2000. TODO: check this.
+			' this might occur if we connect to SQL 2000. TODO - check this.
 	End Select
 
 	if debugging > "1" then wscript.echo "DB Login Type: " & db_login_type end if 
@@ -3892,25 +3875,23 @@ if ((en_sql_server = "y") or (en_sql_express = "y")) then
 
 				Do Until objRS.Eof
 					' get the filesize
-					if (not isnull(objRS.Fields("filename")) and objRS.Fields("filename") > "") then
-						filename = replace(objRS.Fields("filename"), "\", "\\")
-						set colFiles = objWMIService.ExecQuery ("Select FileSize from CIM_Datafile Where name = '" & filename & "'")
-						for each objFile in colFiles
-							filesize = int(objFile.FileSize / 1024 / 1024)
-						next
-						database_name = CStr(objRS("Name"))
-						if debugging > "1" then wscript.echo "DB Name: " & database_name end if 
-						item = item &  "		<details>" & vbcrlf
-						item = item & "			<details_name>" & escape_xml(database_name) & "</details_name>" & vbcrlf
-						item = item & "			<details_internal_id>" & escape_xml(objRS("dbid")) & "</details_internal_id>" & vbcrlf
-						item = item & "			<details_instance>" & escape_xml(instance) & "</details_instance>" & vbcrlf
-						item = item & "			<details_compatibility_mode>" & CStr(objRS("CmptLevel")) & "</details_compatibility_mode>" & vbcrlf
-						item = item & "			<details_filename>" & escape_xml(objRS("FileName")) & "</details_filename>" & vbcrlf
-						item = item & "			<details_current_size>" & escape_xml(filesize) & "</details_current_size>" & vbcrlf
-						item = item & "			<details_creation_date>" & escape_xml(objRS("crdate")) & "</details_creation_date>" & vbcrlf
-						item = item & "		</details>" & vbcrlf
-						objRS.Movenext
-					end if
+					filename = replace(objRS.Fields("filename"), "\", "\\")
+					set colFiles = objWMIService.ExecQuery ("Select FileSize from CIM_Datafile Where name = '" & filename & "'")
+					for each objFile in colFiles
+						filesize = int(objFile.FileSize / 1024 / 1024)
+					next
+					database_name = CStr(objRS("Name"))
+					if debugging > "1" then wscript.echo "DB Name: " & database_name end if 
+					item = item &  "		<details>" & vbcrlf
+					item = item & "			<details_name>" & escape_xml(database_name) & "</details_name>" & vbcrlf
+					item = item & "			<details_internal_id>" & escape_xml(objRS("dbid")) & "</details_internal_id>" & vbcrlf
+					item = item & "			<details_instance>" & escape_xml(instance) & "</details_instance>" & vbcrlf
+					item = item & "			<details_compatibility_mode>" & CStr(objRS("CmptLevel")) & "</details_compatibility_mode>" & vbcrlf
+					item = item & "			<details_filename>" & escape_xml(objRS("FileName")) & "</details_filename>" & vbcrlf
+					item = item & "			<details_current_size>" & escape_xml(filesize) & "</details_current_size>" & vbcrlf
+					item = item & "			<details_creation_date>" & escape_xml(objRS("crdate")) & "</details_creation_date>" & vbcrlf
+					item = item & "		</details>" & vbcrlf
+					objRS.Movenext
 				Loop
 			end if
 			'On Error Goto 0 
@@ -6057,39 +6038,6 @@ end if
 
 result.WriteText "	</software_keys>" & vbcrlf
 
-if ((run_netstat = "y") or (run_netstat = "s" and instr(lcase(os_name), "server"))) then
-	if debugging > "0" then wscript.echo "netstat info" end if 
-	cmd = "netstat -abn"
-	on error resume next
-	set rexec = objShell.exec(cmd)
-	on error goto 0
-	old_line = ""
-	new_line = ""
-	if (isobject(rexec)) then
-		result.WriteText "	<netstat>" & vbcrlf
-		result.WriteText "		<![CDATA["
-		do while not rexec.StdOut.AtEndofStream
-			strtext = rexec.stdout.readline()
-			if (instr(strtext, "Active Connections") or instr(strtext, "Proto  Local Address")) then
-				' do noting - these are header lines
-			else
-				if ((instr(strtext, "  TCP") = 1) or (instr(strtext, "  UDP") = 1)) then
-					' we have a new line, write out the old line
-					if (instr(old_line, "LISTENING") or instr(old_line, "  UDP") = 1) then
-						' only write out the line if it's a "listening" port
-						result.WriteText old_line & vbcrlf
-					end if
-					old_line = strText
-				else 
-					' we have to add on to the previous line
-					old_line = old_line & " " & strText
-				end if
-			end if
-		loop
-		result.WriteText "]]>" & vbcrlf
-		result.WriteText "	</netstat>" & vbcrlf
-	end if
-end if
 
 
 ' NOTE - Have moved to end of audit incase processing fails. 
@@ -6300,13 +6248,6 @@ function escape_xml(ByVal data)
 	end if
 end function
 
-function escape_wmi(ByVal data)
-	if IsNull(data) then
-		escape_wmi = ""
-	else
-		escape_wmi = replace(data, "'", "\'")
-	end if
-end function
 
 function form_factor(system_form_factor)
 	if system_form_factor = "1" then system_form_factor = "Other" end if
